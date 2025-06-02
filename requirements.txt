@@ -1,0 +1,4 @@
+requests>=2.31.0
+prettytable>=3.8.0
+packaging>=23.1
+tqdm>=4.66.1

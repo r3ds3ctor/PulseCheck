@@ -71,3 +71,11 @@ VULNERABILITIES FOUND:
 
 ```
 
+## Author
+Alexander B
+
+## 🤝 Contributing
+This project thrives on community contributions. If you'd like to suggest improvements, report issues, or add new features, feel free to open a pull request.  
+If you’d like to support future development, you can do so here: 
+
+☕ [buymeacoffee.com/alexboteroh]

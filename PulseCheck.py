@@ -19,12 +19,12 @@ class PulseCheck:
     def __init__(self):
         self.system_info = {}
         self.results = []
-        self.api_key = None  # Set your NVD API key here
-        self.api_delay = 6  # NVD API rate limit (requests per second)
+        self.api_key = None
+        self.api_delay = 6
         self.is_macos = False
         self.is_linux = False
         self.verbose = False
-        self.progress = None  # Progress bar handler
+        self.progress = None
 
     def update_progress(self, description, current=0, total=1):
         """Update progress bar with current task"""
@@ -37,13 +37,13 @@ class PulseCheck:
             self.progress.refresh()
 
     def close_progress(self):
-        """Close progress bar if active"""
+        """Close progress bar if it exists"""
         if self.progress is not None:
             self.progress.close()
             self.progress = None
 
     def get_system_info(self):
-        """Collect system information (OS, kernel, packages)"""
+        """Collect comprehensive system information"""
         self.update_progress("Gathering system information")
         
         info = {
@@ -71,7 +71,7 @@ class PulseCheck:
         elif self.is_macos:
             info['distribution'] = f"macOS {platform.mac_ver()[0]}"
 
-        # Check critical packages
+        # Get critical packages versions
         critical_packages = {
             'bash': ['bash', '--version'],
             'openssl': ['openssl', 'version'],
@@ -102,14 +102,14 @@ class PulseCheck:
         return info
 
     def compare_versions(self, v1, v2):
-        """Compare version strings using packaging library"""
+        """Compare software versions using packaging library"""
         try:
             return version.parse(v1) >= version.parse(v2)
         except:
             return v1 >= v2
 
     def check_kernel_vulnerabilities(self):
-        """Check for known kernel vulnerabilities"""
+        """Check for known kernel vulnerabilities with version validation"""
         if not self.is_linux:
             return
 
@@ -120,13 +120,13 @@ class PulseCheck:
                 "min_version": "5.8",
                 "max_version": "5.16.11",
                 "severity": "High",
-                "description": "Linux kernel privilege escalation via pipe subsystem."
+                "description": "Vulnerability in Linux kernel pipes subsystem allowing privilege escalation."
             },
             {
                 "title": "PwnKit",
                 "cve": "CVE-2021-4034",
                 "severity": "High",
-                "description": "pkexec local privilege escalation in polkit."
+                "description": "pkexec in polkit incorrectly handles invocation, allowing local privilege escalation."
             }
         ]
 
@@ -141,7 +141,7 @@ class PulseCheck:
                         vuln['cve'],
                         vuln['severity'],
                         vuln['description'],
-                        "Update kernel to patched version."
+                        "Update kernel to secure version."
                     )
 
             if vuln['title'] == "PwnKit" and os.path.exists("/usr/bin/pkexec"):
@@ -150,13 +150,13 @@ class PulseCheck:
                     vuln['cve'],
                     vuln['severity'],
                     vuln['description'],
-                    "Update polkit package."
+                    "Update polkit or apply patches."
                 )
             
             self.update_progress("Checking kernel vulnerabilities", i+1)
 
     def check_cve_with_nvd_api(self, software_name, version=None, exact_match=False):
-        """Query NVD API for CVEs"""
+        """Check public CVEs using the NVD API with precise version matching"""
         findings = []
         base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
         
@@ -190,14 +190,12 @@ class PulseCheck:
                 cve = item["cve"]
                 cve_id = cve["id"]
                 
-                # Skip duplicates
                 if any(r['CVE'] == cve_id for r in self.results):
                     continue
                 
                 description = next((desc["value"] for desc in cve["descriptions"] 
                                  if desc["lang"] == "en"), "No description available")
                 
-                # Extract severity
                 severity = "Unknown"
                 cvss_metrics = cve.get("metrics", {})
                 
@@ -208,7 +206,6 @@ class PulseCheck:
                 elif "cvssMetricV2" in cvss_metrics:
                     severity = cvss_metrics["cvssMetricV2"][0]["baseSeverity"]
                 
-                # Check affected versions
                 affected_versions = []
                 for config in cve.get("configurations", []):
                     for node in config.get("nodes", []):
@@ -229,14 +226,14 @@ class PulseCheck:
                         if ver_info["software"] != software_name:
                             continue
                             
-                        if (not ver_info["start"] or self.compare_versions(version, ver_info["start"])) and 
-                           (not ver_info["end"] or not self.compare_versions(version, ver_info["end"])):
+                        if ((not ver_info["start"] or self.compare_versions(version, ver_info["start"])) and 
+                           (not ver_info["end"] or not self.compare_versions(version, ver_info["end"]))):
                             is_affected = True
-                            mitigation = f"Affected versions: {ver_info['start'] or 'any'} to {ver_info['end'] or 'any'}"
+                            mitigation = f"Affected versions: {ver_info['start'] or 'any'} to {ver_info['end'] or 'any'}. Update to latest version."
                             break
                 elif not version:
                     is_affected = True
-                    mitigation = "General advisory - verify version applicability"
+                    mitigation = "General vulnerability - check specific version applicability"
                 
                 if is_affected:
                     findings.append({
@@ -249,15 +246,15 @@ class PulseCheck:
 
         except requests.exceptions.RequestException as e:
             if self.verbose:
-                print(f"[!] NVD API error: {e}")
+                print(f"[!] Error querying NVD API: {e}")
         except Exception as e:
             if self.verbose:
-                print(f"[!] NVD processing error: {e}")
+                print(f"[!] Unexpected error processing NVD response: {e}")
 
         return findings
 
     def check_system_with_nvd(self):
-        """Check all system components against NVD"""
+        """Check system components against NVD database with precise version matching"""
         self.update_progress("Querying NVD database")
         
         tasks = []
@@ -294,11 +291,10 @@ class PulseCheck:
             time.sleep(self.api_delay)
 
     def add_vulnerability(self, title, cve, crit, description, mitigation=None):
-        """Add validated vulnerability to results"""
+        """Add a vulnerability to results with validation"""
         if any(r['CVE'] == cve for r in self.results):
             return
             
-        # Skip low-severity issues
         if crit == "Low":
             return
             
@@ -307,11 +303,11 @@ class PulseCheck:
             "CVE": cve,
             "Criticality": crit,
             "Description": description,
-            "Mitigation": mitigation or "Consult vendor advisory"
+            "Mitigation": mitigation or "Check vendor advisory"
         })
 
     def generate_html_report(self, filename):
-        """Generate interactive HTML report"""
+        """Generate a modern HTML report with styling"""
         severity_colors = {
             "Critical": "danger",
             "High": "warning",
@@ -319,7 +315,7 @@ class PulseCheck:
             "Low": "secondary"
         }
         
-        # Sort by severity
+        # Sort by criticality
         self.results.sort(key=lambda x: ["Critical", "High", "Medium", "Low"].index(x['Criticality']))
         
         html_content = f"""
@@ -346,7 +342,6 @@ class PulseCheck:
             <p class="lead text-muted">Generated on {self.system_info['scan_date']}</p>
         </div>
         
-        <!-- System Info Section -->
         <div class="row mb-5">
             <div class="col-md-6">
                 <div class="card shadow-sm">
@@ -372,7 +367,6 @@ class PulseCheck:
                 </div>
             </div>
             
-            <!-- Packages Section -->
             <div class="col-md-6">
                 <div class="card shadow-sm">
                     <div class="card-header bg-primary text-white">
@@ -380,7 +374,7 @@ class PulseCheck:
                     </div>
                     <div class="card-body">
                         <ul class="list-group list-group-flush">
-        """
+"""
         
         for pkg, ver in self.system_info['packages'].items():
             html_content += f"""
@@ -388,7 +382,7 @@ class PulseCheck:
                                 <span>{pkg.capitalize()}</span>
                                 <span class="fw-bold">{html.escape(ver)}</span>
                             </li>
-            """
+"""
         
         html_content += """
                         </ul>
@@ -397,11 +391,10 @@ class PulseCheck:
             </div>
         </div>
         
-        <!-- Vulnerabilities Section -->
         <div class="mb-4">
             <h2 class="h4 fw-bold">
                 <span class="badge bg-primary rounded-pill me-2">{len(self.results)}</span>
-                Detected Vulnerabilities
+                Vulnerabilities Found
             </h2>
             <div class="progress mt-2" style="height: 8px;">
                 <div class="progress-bar bg-danger" style="width: {len([r for r in self.results if r['Criticality'] == 'Critical'])/len(self.results)*100 if self.results else 0}%"></div>
@@ -409,7 +402,7 @@ class PulseCheck:
                 <div class="progress-bar bg-info" style="width: {len([r for r in self.results if r['Criticality'] == 'Medium'])/len(self.results)*100 if self.results else 0}%"></div>
             </div>
         </div>
-        """
+"""
         
         for vuln in self.results:
             color = severity_colors.get(vuln['Criticality'], 'secondary')
@@ -432,7 +425,7 @@ class PulseCheck:
                     <div class="col-md-4">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h6 class="card-subtitle mb-2 text-muted">Remediation</h6>
+                                <h6 class="card-subtitle mb-2 text-muted">Mitigation</h6>
                                 <p class="card-text">{html.escape(vuln['Mitigation'])}</p>
                             </div>
                         </div>
@@ -443,7 +436,7 @@ class PulseCheck:
                 <small class="text-muted">CVE: <a href="https://nvd.nist.gov/vuln/detail/{vuln['CVE']}" target="_blank">{vuln['CVE']}</a></small>
             </div>
         </div>
-            """
+"""
         
         html_content += """
         <footer class="mt-5 text-center text-muted">
@@ -453,13 +446,13 @@ class PulseCheck:
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-        """
+"""
         
         with open(filename, 'w') as f:
             f.write(html_content)
 
     def generate_text_report(self, filename):
-        """Generate formatted text report"""
+        """Generate text report with PrettyTable"""
         self.results.sort(key=lambda x: ["Critical", "High", "Medium", "Low"].index(x['Criticality']))
         
         table = PrettyTable()
@@ -496,16 +489,16 @@ VULNERABILITIES FOUND:
             f.write(report_content)
 
     def generate_report(self):
-        """Generate both report formats"""
+        """Generate both HTML and text reports"""
         self.update_progress("Generating reports")
         
         base_filename = f"pulsecheck_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
-        # HTML report
+        # Generate HTML report
         html_filename = f"{base_filename}.html"
         self.generate_html_report(html_filename)
         
-        # Text report
+        # Generate text report
         text_filename = f"{base_filename}.txt"
         self.generate_text_report(text_filename)
         
@@ -513,17 +506,16 @@ VULNERABILITIES FOUND:
         print(f"[+] Text report saved to: {text_filename}")
 
     def run(self):
-        """Execute full vulnerability scan"""
+        """Run the complete vulnerability scan"""
         try:
             print("=== PULSECHECK VULNERABILITY SCAN ===")
             
-            # Collect system data
+            # Initialize system info
             self.system_info = self.get_system_info()
             
             print(f"Detected system: {self.system_info['distribution']} ({self.system_info['os_type']})")
             print(f"Kernel version: {self.system_info['kernel']}")
             
-            # Run checks
             self.check_kernel_vulnerabilities()
             self.check_system_with_nvd()
             self.generate_report()
@@ -540,8 +532,8 @@ if __name__ == "__main__":
         scanner.run()
         
     except KeyboardInterrupt:
-        print("\n[!] Scan aborted by user.")
+        print("\n[!] Scan interrupted by user.")
         exit(1)
     except Exception as e:
-        print(f"[!] Error: {e}")
+        print(f"[!] Unexpected error: {e}")
         exit(1)
